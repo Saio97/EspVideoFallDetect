@@ -31,6 +31,7 @@ struct Sim {
   uint32_t t = 0;
   int brightness = 0;
   std::vector<Event> events;
+  fall::Posture posture = fall::Posture::UNKNOWN;  // se impostata, passata a ogni frame
 
   Sim() {
     srand(1234);
@@ -53,6 +54,7 @@ struct Sim {
 
   void step(const Person* p) {
     render(p);
+    det.setPosture(posture);
     Event e = det.update(img.data(), t);
     if (e != Event::NONE) events.push_back(e);
     t += DT;
@@ -187,6 +189,41 @@ void test_immobile_fallen_person_absorbed_in_background_still_alarms() {
   TEST_ASSERT_EQUAL(State::ALARM, s.det.status().state);
 }
 
+// Una caduta "in scorcio" verso la telecamera lascia la sagoma quasi quadrata:
+// il rapporto altezza/larghezza non basta, ma un classificatore esterno sì.
+void test_external_posture_detects_foreshortened_fall() {
+  const Person squarish{40, 56, 18, 18};
+  {
+    Sim s;
+    s.warmEmptyRoom();
+    s.hold(&kStanding, 1000);
+    s.move(kStanding, squarish, 500);
+    s.hold(&squarish, 16000);
+    TEST_ASSERT_FALSE(s.has(Event::FALL_SUSPECTED));  // solo riquadro: non vista
+  }
+  {
+    Sim s;
+    s.warmEmptyRoom();
+    s.posture = fall::Posture::STANDING;
+    s.hold(&kStanding, 1000);
+    s.posture = fall::Posture::LYING;
+    s.move(kStanding, squarish, 500);
+    s.hold(&squarish, 16000);
+    TEST_ASSERT_EQUAL(State::ALARM, s.det.status().state);
+  }
+}
+
+void test_external_posture_bent_is_not_lying() {
+  Sim s;
+  s.warmEmptyRoom();
+  s.posture = fall::Posture::STANDING;
+  s.hold(&kStanding, 1000);
+  s.posture = fall::Posture::BENT;
+  s.move(kStanding, kLying, 500);  // forma a terra ma il classificatore dice "chinato"
+  s.hold(&kLying, 16000);
+  TEST_ASSERT_FALSE(s.has(Event::FALL_SUSPECTED));
+}
+
 void test_walking_across_room_no_false_alarm() {
   Sim s;
   s.warmEmptyRoom();
@@ -215,5 +252,7 @@ int main(int, char**) {
   RUN_TEST(test_lights_on_resets_background_without_alarm);
   RUN_TEST(test_immobile_fallen_person_absorbed_in_background_still_alarms);
   RUN_TEST(test_walking_across_room_no_false_alarm);
+  RUN_TEST(test_external_posture_detects_foreshortened_fall);
+  RUN_TEST(test_external_posture_bent_is_not_lying);
   return UNITY_END();
 }

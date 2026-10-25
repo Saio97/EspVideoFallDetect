@@ -56,9 +56,12 @@ WARMUP ──3 s──► MONITORING ──caduta──► FALL_SUSPECTED ──
 - Una caduta *verso* la telecamera può lasciare la sagoma quasi verticale: monta il dispositivo in un angolo, in modo che i percorsi principali siano di lato.
 - Non si vede ciò che è coperto da mobili.
 
+## Variante CNN
+
+Il criterio "forma ≥ 1,25 = in piedi, ≤ 0,85 = a terra" può essere sostituito da un classificatore esterno tramite `FallDetector::setPosture()`: la variante `xiao_esp32s3_cnn` usa una piccola rete TensorFlow Lite Micro. Vedi [CNN.md](CNN.md).
+
 ## Possibili evoluzioni
 
-- Modello di classificazione (TensorFlow Lite Micro / ESP‑DL) sulla sagoma per ridurre i falsi allarmi sul letto e sul divano.
 - Foto a colori ad alta risoluzione al momento dell'allarme (riconfigurando il sensore).
 - Messaggio periodico "dispositivo attivo" e allarme se il dispositivo smette di rispondere (watchdog esterno).
 - Integrazione con Home Assistant via MQTT.

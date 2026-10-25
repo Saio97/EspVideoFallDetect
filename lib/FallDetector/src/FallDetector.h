@@ -37,10 +37,15 @@ struct Params {
 };
 
 enum class State : uint8_t { WARMUP, MONITORING, FALL_SUSPECTED, ALARM };
+
+// Postura fornita da un classificatore esterno (es. CNN). Con UNKNOWN si usa
+// il rapporto altezza/larghezza del riquadro.
+enum class Posture : uint8_t { UNKNOWN, NONE, STANDING, BENT, LYING };
 enum class Event : uint8_t { NONE, FALL_SUSPECTED, ALARM, RECOVERED, BACKGROUND_RESET };
 
 const char* stateName(State s);
 const char* eventName(Event e);
+const char* postureName(Posture p);
 
 struct Box {
   int16_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;  // estremi inclusi
@@ -53,6 +58,9 @@ struct Status {
   bool personPresent = false;
   Box box;
   float aspect = 0.0f;          // altezza / larghezza del riquadro
+  Posture posture = Posture::UNKNOWN;  // postura usata per l'ultimo frame
+  bool standing = false;        // persona considerata in piedi
+  bool lying = false;           // persona considerata a terra
   float centroidY = 0.0f;       // in pixel
   float fgFraction = 0.0f;      // frazione di pixel di primo piano
   float motion = 0.0f;          // frazione di pixel cambiati rispetto al frame precedente
@@ -72,6 +80,10 @@ class FallDetector {
 
   // Elabora un frame in scala di grigi (width*height byte, riga per riga).
   Event update(const uint8_t* gray, uint32_t nowMs);
+
+  // Postura del frame che sta per essere passato a update(). Vale per un solo
+  // frame: il chiamante la imposta ogni volta, altrimenti si torna al riquadro.
+  void setPosture(Posture p) { posture_ = p; }
 
   // Torna al monitoraggio (dopo un allarme gestito o un falso allarme).
   void reset(uint32_t nowMs);
@@ -94,6 +106,8 @@ class FallDetector {
     float top;
     float centroidY;
     float aspect;
+    bool standing;
+    bool lying;
   };
   static constexpr size_t kHistory = 48;
 
@@ -116,6 +130,7 @@ class FallDetector {
   size_t histHead_ = 0;
   size_t histCount_ = 0;
 
+  Posture posture_ = Posture::UNKNOWN;
   float preFallTop_ = 0.0f;
   uint32_t warmupStartMs_ = 0;
   Status status_;

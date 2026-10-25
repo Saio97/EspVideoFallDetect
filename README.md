@@ -54,6 +54,7 @@ Guida completa passo passo: [docs/INSTALLAZIONE.md](docs/INSTALLAZIONE.md).
 - [INSTALLAZIONE.md](docs/INSTALLAZIONE.md): firmware, bot Telegram, primo avvio, prova
 - [TARATURA.md](docs/TARATURA.md): come ridurre falsi allarmi e cadute non rilevate
 - [ALGORITMO.md](docs/ALGORITMO.md): come funziona il rilevamento
+- [CNN.md](docs/CNN.md): variante opzionale con classificatore di postura (TensorFlow Lite Micro), raccolta dati e riaddestramento
 - [SICUREZZA.md](docs/SICUREZZA.md): privacy, sicurezza e limiti
 
 ## Struttura
@@ -61,7 +62,9 @@ Guida completa passo passo: [docs/INSTALLAZIONE.md](docs/INSTALLAZIONE.md).
 ```
 include/            configurazione (config.h, secrets.example.h, pin telecamera)
 lib/FallDetector/   algoritmo di rilevamento, C++ puro e testabile sul PC
-src/                firmware: telecamera, Telegram, pagina web, logica di allarme
+src/                firmware: telecamera, Telegram, pagina web, logica di allarme, CNN
+tools/              addestramento ed export della CNN di postura
+models/             modello TFLite int8 incluso (addestrato su dati sintetici)
 test/               test dell'algoritmo su scene simulate (pio test -e native)
 docs/               documentazione
 ```
@@ -71,6 +74,7 @@ docs/               documentazione
 ```bash
 pio test -e native          # test dell'algoritmo sul PC
 pio run -e xiao_esp32s3     # compila il firmware
+pio run -e xiao_esp32s3_cnn # variante con la CNN di postura (docs/CNN.md)
 pio run -t upload           # carica sulla scheda
 pio device monitor          # log seriale
 ```

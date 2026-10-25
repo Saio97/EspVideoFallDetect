@@ -45,6 +45,7 @@ canvas{position:absolute;inset:0}small{color:var(--mut)}
 <div><div class="k">Allarmi dall'avvio</div><div id="ac">-</div></div>
 <div><div class="k">Acceso da</div><div id="up">-</div></div>
 <div><div class="k">Wi-Fi</div><div id="rs">-</div></div>
+<div id="cnnbox" style="display:none"><div class="k">Postura (CNN)</div><div id="cnn">-</div></div>
 </div>
 <p><button class="big" onclick="post('/api/ack')">Sto bene / allarme gestito</button></p>
 <button onclick="post('/api/test')">Allarme di prova</button>
@@ -54,7 +55,12 @@ canvas{position:absolute;inset:0}small{color:var(--mut)}
 </div>
 <div class="card"><div class="k">Inquadratura (il riquadro verde è la sagoma rilevata)</div>
 <div class="wrap" id="wrap" style="display:none"><img id="img" alt="istantanea"><canvas id="cv" width="320" height="240"></canvas></div>
-<p><button onclick="snap()">Scatta istantanea</button><small> L'immagine non viene salvata.</small></p></div>
+<p><button onclick="snap()">Scatta istantanea</button><small> L'immagine non viene salvata.</small></p>
+<details><summary class="k">Raccolta dati per la CNN</summary>
+<p><small>Salva il fotogramma 80×60 attuale (grigio + sagoma) con l'etichetta giusta, poi metti i file in <code>data/real/&lt;ETICHETTA&gt;/</code> e lancia <code>tools/train_posture_cnn.py --real data/real</code>.</small></p>
+<button class="sec" onclick="saveFrame('NONE')">Nessuno</button><button class="sec" onclick="saveFrame('STANDING')">In piedi</button>
+<button class="sec" onclick="saveFrame('BENT')">Seduto/chinato</button><button class="sec" onclick="saveFrame('LYING')">A terra</button>
+<small id="fmsg"></small></details></div>
 <div class="card"><div class="k">Taratura</div><form id="pf"></form>
 <button onclick="saveParams()">Salva soglie</button><small id="pmsg"></small>
 <p><small>Spiegazione delle soglie in docs/TARATURA.md. Tenendo premuto il pulsante all'accensione si ripristinano i valori predefiniti.</small></p></div>
@@ -69,10 +75,13 @@ async function refresh(){try{const r=await fetch('/api/status');const s=await r.
 const e=document.getElementById('st');e.textContent=s.stateLabel;
 e.className='state '+(s.alarmActive||s.state=='ALARM'?'bad':s.state=='FALL_SUSPECTED'||s.paused?'warn':'ok');
 pp.textContent=s.personPresent?'sì':'no';asp.textContent=s.personPresent?s.aspect.toFixed(2):'-';
-ins.textContent=fmt(s.inStateS);ac.textContent=s.alarmCount;up.textContent=s.uptime;rs.textContent=s.rssi+' dBm';
+ins.textContent=fmt(s.inStateS);
+if(s.cnn){cnnbox.style.display='block';cnn.textContent=(s.posture||'-')+' ('+Math.round((s.postureConfidence||0)*100)+'%, '+(s.inferenceMs||0).toFixed(0)+' ms)'}ac.textContent=s.alarmCount;up.textContent=s.uptime;rs.textContent=s.rssi+' dBm';
 drawBox()}catch(e){}}
 function drawBox(){const c=cv.getContext('2d');c.clearRect(0,0,320,240);if(!last.personPresent)return;
 const k=320/last.detW,b=last.box;c.strokeStyle='#22c55e';c.lineWidth=3;c.strokeRect(b[0]*k,b[1]*k,(b[2]-b[0]+1)*k,(b[3]-b[1]+1)*k)}
+async function saveFrame(label){const r=await fetch('/frame.bin?t='+Date.now());if(!r.ok){fmsg.textContent=' Errore.';return}
+const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=label+'_'+Date.now()+'.bin';a.click();fmsg.textContent=' Salvato '+a.download}
 function snap(){img.onload=()=>{wrap.style.display='block';drawBox()};img.src='/snapshot.jpg?t='+Date.now()}
 async function loadParams(){const p=await (await fetch('/api/params')).json();pf.innerHTML='';
 for(const k in p){pf.insertAdjacentHTML('beforeend',`<label>${L[k]||k}<input name="${k}" type="number" step="any" value="${p[k]}"></label>`)}}
@@ -175,6 +184,17 @@ void webBegin() {
     }
     server.sendHeader("Cache-Control", "no-store");
     server.send_P(200, "image/jpeg", reinterpret_cast<const char*>(jpg.data()), jpg.size());
+  });
+
+  server.on("/frame.bin", HTTP_GET, [] {
+    if (!auth()) return;
+    std::vector<uint8_t> raw;
+    if (!appFrameRaw(raw)) {
+      server.send(503, "text/plain", "Nessun fotogramma");
+      return;
+    }
+    server.sendHeader("Cache-Control", "no-store");
+    server.send_P(200, "application/octet-stream", reinterpret_cast<const char*>(raw.data()), raw.size());
   });
 
   server.onNotFound([] { server.send(404, "text/plain", "Non trovato"); });

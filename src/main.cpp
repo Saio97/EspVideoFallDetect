@@ -16,6 +16,7 @@
 #include "settings.h"
 #include "telegram.h"
 #include "web.h"
+#include "posture_cnn.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -36,6 +37,9 @@ volatile bool snapshotRequested = false;
 SemaphoreHandle_t snapshotReady;
 std::vector<uint8_t> snapshotJpeg;
 std::vector<uint8_t> alarmJpeg;   // foto scattata al momento dell'allarme
+uint8_t small[DET_W * DET_H];     // ultimo frame 80x60 analizzato (protetto da detMutex)
+// Postura del frame precedente, data dal classificatore CNN (se compilato).
+fall::Posture cnnPosture = fall::Posture::UNKNOWN;
 
 volatile uint32_t pausedUntilMs = 0;
 volatile bool paused = false;
@@ -84,7 +88,6 @@ String stateLabel(fall::State s) {
 // ------------------------------------------------------- task di rilevamento
 
 void detectTask(void*) {
-  static uint8_t small[DET_W * DET_H];
   TickType_t last = xTaskGetTickCount();
   const TickType_t period = pdMS_TO_TICKS(1000 / DETECT_FPS);
   bool wasPaused = false;
@@ -109,7 +112,15 @@ void detectTask(void*) {
         wasPaused = false;
       }
       downsampleGray(fb->buf, fb->width, fb->height, small);
+      // La CNN lavora sulla maschera del frame appena elaborato e il suo
+      // risultato vale per il frame successivo (ritardo di 1/DETECT_FPS s).
+      detector.setPosture(cnnPosture);
       ev = detector.update(small, now);
+      if (posture::available() && detector.status().state != fall::State::WARMUP) {
+        cnnPosture = detector.status().personPresent
+                         ? posture::classify(small, detector.mask(), DET_W, DET_H, CNN_MIN_CONFIDENCE).posture
+                         : fall::Posture::UNKNOWN;
+      }
       if (ev == fall::Event::ALARM) encodeJpeg(fb, alarmJpeg);
     }
     if (snapshotRequested) {
@@ -315,6 +326,13 @@ void appStatusJson(JsonObject out) {
   out["telegram"] = telegram.configured();
   out["detW"] = DET_W;
   out["detH"] = DET_H;
+  out["cnn"] = posture::available();
+  if (posture::available()) {
+    const posture::Result& r = posture::last();
+    out["posture"] = fall::postureName(st.posture);
+    out["postureConfidence"] = r.confidence;
+    out["inferenceMs"] = r.inferenceUs / 1000.0f;
+  }
 }
 
 void appAcknowledge(const String& who) {
@@ -361,6 +379,17 @@ bool appSnapshot(std::vector<uint8_t>& jpg, uint32_t timeoutMs) {
   snapshotJpeg.clear();
   xSemaphoreGive(detMutex);
   return !jpg.empty();
+}
+
+bool appFrameRaw(std::vector<uint8_t>& out) {
+  xSemaphoreTake(detMutex, portMAX_DELAY);
+  const bool ok = detector.status().frames > 0;
+  if (ok) {
+    out.assign(small, small + DET_W * DET_H);
+    out.insert(out.end(), detector.mask(), detector.mask() + DET_W * DET_H);
+  }
+  xSemaphoreGive(detMutex);
+  return ok;
 }
 
 fall::Params appGetParams() {
@@ -410,6 +439,11 @@ void setup() {
     }
     ESP.restart();
   }
+
+#ifdef USE_POSTURE_CNN
+  if (posture::begin()) Serial.println("[cnn] classificatore di postura attivo");
+  else Serial.println("[cnn] classificatore non disponibile: uso il rapporto altezza/larghezza");
+#endif
 
   wifiBegin();
   if (MDNS.begin(MDNS_HOSTNAME)) MDNS.addService("http", "tcp", 80);

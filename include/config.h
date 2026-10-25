@@ -22,6 +22,11 @@
 #define DETECT_FPS         10   // frame analizzati al secondo
 #define JPEG_QUALITY       80   // 0-100, qualità della foto inviata con l'allarme
 
+// ---------------------------------------------------------------- CNN (opzionale)
+// Solo con -DUSE_POSTURE_CNN (env xiao_esp32s3_cnn). Sotto questa confidenza
+// il classificatore viene ignorato e si usa il rapporto altezza/larghezza.
+#define CNN_MIN_CONFIDENCE         0.60f
+
 // ---------------------------------------------------------------- Allarmi
 // Ogni quanto ripetere l'allarme finché qualcuno non risponde.
 #define ALARM_REPEAT_MS            (2UL * 60UL * 1000UL)

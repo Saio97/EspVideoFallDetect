@@ -40,6 +40,17 @@ const char* eventName(Event e) {
   return "?";
 }
 
+const char* postureName(Posture p) {
+  switch (p) {
+    case Posture::UNKNOWN: return "UNKNOWN";
+    case Posture::NONE: return "NONE";
+    case Posture::STANDING: return "STANDING";
+    case Posture::BENT: return "BENT";
+    case Posture::LYING: return "LYING";
+  }
+  return "?";
+}
+
 FallDetector::~FallDetector() { release(); }
 
 void FallDetector::release() {
@@ -108,13 +119,13 @@ void FallDetector::pushSample(const Sample& s) {
 bool FallDetector::detectFallTransition(uint32_t nowMs, float* preFallTop) const {
   if (histCount_ < 2) return false;
   const Sample& cur = history_[(histHead_ + kHistory - 1) % kHistory];
-  if (cur.aspect > params_.lyingAspect) return false;
+  if (!cur.lying) return false;
 
   const float minDrop = params_.fallDropFraction * h_;
   for (size_t i = 1; i < histCount_; ++i) {
     const Sample& s = history_[(histHead_ + kHistory - 1 - i) % kHistory];
     if (nowMs - s.t > params_.fallWindowMs) break;
-    if (s.aspect >= params_.standingAspect && (cur.top - s.top) >= minDrop) {
+    if (s.standing && (cur.top - s.top) >= minDrop) {
       *preFallTop = s.top;
       return true;
     }
@@ -125,12 +136,15 @@ bool FallDetector::detectFallTransition(uint32_t nowMs, float* preFallTop) const
 bool FallDetector::isRecovered() const {
   if (!status_.personPresent) return false;
   const float tol = params_.recoverTopFraction * h_;
-  return status_.aspect >= params_.standingAspect && status_.box.y0 <= preFallTop_ + tol;
+  return status_.standing && status_.box.y0 <= preFallTop_ + tol;
 }
 
 Event FallDetector::update(const uint8_t* gray, uint32_t nowMs) {
   const size_t n = static_cast<size_t>(w_) * h_;
   ++status_.frames;
+  const Posture posture = posture_;
+  posture_ = Posture::UNKNOWN;
+  status_.posture = posture;
 
   if (!hasPrev_) {
     for (size_t i = 0; i < n; ++i) bg_[i] = gray[i];
@@ -202,7 +216,17 @@ Event FallDetector::update(const uint8_t* gray, uint32_t nowMs) {
     status_.box.x1 = percentileIndex(colCount_, w_, hi);
     status_.aspect = static_cast<float>(status_.box.height()) / status_.box.width();
     status_.centroidY = static_cast<float>(sumY) / fg;
-    pushSample({nowMs, static_cast<float>(status_.box.y0), status_.centroidY, status_.aspect});
+    if (posture == Posture::UNKNOWN) {
+      status_.standing = status_.aspect >= params_.standingAspect;
+      status_.lying = status_.aspect <= params_.lyingAspect;
+    } else {
+      status_.standing = posture == Posture::STANDING;
+      status_.lying = posture == Posture::LYING;
+    }
+    pushSample({nowMs, static_cast<float>(status_.box.y0), status_.centroidY, status_.aspect,
+                status_.standing, status_.lying});
+  } else {
+    status_.standing = status_.lying = false;
   }
 
   // 4. Macchina a stati.
