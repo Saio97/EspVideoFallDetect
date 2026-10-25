@@ -5,6 +5,7 @@
 #include <Arduino.h>
 
 #include <TensorFlowLite_ESP32.h>
+#include <tensorflow/lite/micro/micro_error_reporter.h>
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/micro/micro_mutable_op_resolver.h>
 #include <tensorflow/lite/schema/schema_generated.h>
@@ -55,7 +56,9 @@ bool begin() {
   resolver.AddQuantize();
   resolver.AddDequantize();
 
-  static tflite::MicroInterpreter staticInterpreter(model, resolver, arena, kArenaSize);
+  static tflite::MicroErrorReporter errorReporter;
+  static tflite::MicroInterpreter staticInterpreter(model, resolver, arena, kArenaSize,
+                                                    &errorReporter, nullptr, nullptr);
   interpreter = &staticInterpreter;
   if (interpreter->AllocateTensors() != kTfLiteOk) {
     Serial.println("[cnn] AllocateTensors fallito: aumenta kArenaSize");
